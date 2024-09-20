@@ -1,0 +1,133 @@
+services:
+  api:
+    build:
+      context: .
+    command: sh /start-django.sh
+    env_file:
+      - ./.env
+    volumes:
+      - .:/app
+    expose:
+      - 8000
+    networks:
+      - dev-network
+    depends_on:
+      - db
+      - redis
+    restart: on-failure
+    dns:
+      - 8.8.8.8
+
+  db:
+    image: postgres:16
+    expose:
+      - 5432
+    restart: always
+    environment:
+      - POSTGRES_DB=
+      - POSTGRES_USER=
+      - POSTGRES_PASSWORD=
+    volumes:
+      - postgres-data:/var/lib/postgresql/data/
+    networks:
+      - dev-network
+
+  web:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    expose:
+      - 3000
+    volumes:
+      - ./node_modules:/frontend/node_modules
+      - ./frontend/public:/frontend/public
+
+  redis:
+    image: redis:latest
+    expose:
+      - 6379
+    volumes:
+      - redis-data:/data
+    networks:
+      - dev-network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL:
+      PGADMIN_DEFAULT_PASSWORD: ""
+    ports:
+      - "5050:80"
+    networks:
+      - dev-network
+
+  nginx:
+    build: ./docker/nginx/
+    restart: "on-failure"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - dev-network
+    volumes:
+      - ./media_cdn:/app/media
+      - ./static_cdn/:/app/static
+      - ./frontend/public:/var/www/frontend
+      - ./docker/ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+      - web
+
+  celery_worker:
+    build:
+      context: .
+    command: sh /start-celeryworker.sh
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - redis
+      - db
+    networks:
+      - dev-network
+
+  celery_beat:
+    build:
+      context: .
+    command: sh /start-celerybeat.sh
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - redis
+      - db
+    networks:
+      - dev-network
+
+#  flower:
+#    build:
+#      context: .
+#    command: sh /start-flower.sh
+#    volumes:
+#      - .:/app
+#    env_file:
+#      - ./.env
+#    ports:
+#      - 5557:5555
+#    depends_on:
+#      - redis
+#      - db
+#    networks:
+#      - dev-network
+
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  dev-network:
+    driver: bridge
